@@ -1,0 +1,535 @@
+{% comment %} <!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Ethereum AI Trading Advisor</title>
+    <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
+
+    <style>
+      /* -------------------- Global Styles -------------------- */
+      body {
+        font-family: "Poppins", sans-serif;
+        background: radial-gradient(circle at top, #0d1117, #000);
+        color: #f8f8f8;
+        overflow: hidden;
+        margin: 0;
+        padding: 0;
+      }
+
+      /* Animated floating crypto icons background */
+      @keyframes float {
+        0% { transform: translateY(0px) rotate(0deg); opacity: 0.8; }
+        50% { transform: translateY(-25px) rotate(10deg); opacity: 1; }
+        100% { transform: translateY(0px) rotate(0deg); opacity: 0.8; }
+      }
+
+      .crypto-bg {
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        overflow: hidden;
+        pointer-events: none;
+      }
+
+      .crypto-bg img {
+        position: absolute;
+        width: 80px;
+        opacity: 0.15;
+        animation: float 6s ease-in-out infinite;
+      }
+
+      .crypto-bg img:nth-child(1) { top: 10%; left: 15%; animation-delay: 0s; }
+      .crypto-bg img:nth-child(7) { top: 50%; left: 5%; animation-delay: 6s; }
+      .crypto-bg img:nth-child(3) { top: 75%; left: 25%; animation-delay: 2s; }
+      .crypto-bg img:nth-child(5) { top: 35%; left: 20%; animation-delay: 4s; }
+      .crypto-bg img:nth-child(4) { top: 10%; left: 80%; animation-delay: 3s; }
+      .crypto-bg img:nth-child(6) { top: 50%; left: 80%; animation-delay: 5s; }
+      .crypto-bg img:nth-child(2) { top: 75%; left: 70%; animation-delay: 1s; }
+      .crypto-bg img:nth-child(8) { top: 35%; left: 75%; animation-delay: 7s; }
+
+      /* -------------------- Container -------------------- */
+      .container {
+        width: 450px;
+        margin: 100px auto;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 20px;
+        box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
+        backdrop-filter: blur(15px);
+        padding: 35px;
+        text-align: center;
+        animation: fadeIn 0.8s ease;
+      }
+
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      h1 {
+        color: #00e0ff;
+        text-shadow: 0 0 10px rgba(0, 224, 255, 0.6);
+        font-size: 1.9em;
+        margin-bottom: 10px;
+      }
+
+      p.subtitle {
+        font-size: 0.95em;
+        color: #ccc;
+        margin-bottom: 25px;
+      }
+
+      /* -------------------- Buttons -------------------- */
+      button {
+        background: linear-gradient(90deg, #007bff, #00c6ff);
+        border: none;
+        color: white;
+        padding: 12px 24px;
+        border-radius: 12px;
+        font-size: 15px;
+        cursor: pointer;
+        margin: 8px;
+        font-weight: 600;
+        transition: all 0.25s ease;
+        box-shadow: 0 4px 15px rgba(0, 123, 255, 0.4);
+      }
+
+      button:hover {
+        transform: scale(1.05);
+        background: linear-gradient(90deg, #00c6ff, #007bff);
+        box-shadow: 0 6px 20px rgba(0, 123, 255, 0.6);
+      }
+
+      button:disabled {
+        background: #444;
+        cursor: not-allowed;
+        box-shadow: none;
+      }
+
+      #walletAddress {
+        font-size: 0.95em;
+        color: #aaa;
+        margin-bottom: 20px;
+      }
+
+      /* -------------------- Results -------------------- */
+      .result-box {
+        margin-top: 25px;
+        padding: 20px;
+        border-radius: 15px;
+        background: rgba(0, 0, 0, 0.4);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        text-align: left;
+        line-height: 1.6;
+        min-height: 150px;
+      }
+
+      .result-box strong {
+        color: #00e0ff;
+      }
+
+      img {
+        display: block;
+        margin: 20px auto;
+        border-radius: 12px;
+        max-width: 100%;
+        box-shadow: 0 4px 25px rgba(0, 224, 255, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+      }
+
+      .price {
+        margin-top: 10px;
+        color: #00e0ff;
+        font-weight: bold;
+        font-size: 1.1em;
+      }
+
+      /* Loader */
+      .loader {
+        display: none;
+        margin: 20px auto;
+        border: 4px solid rgba(255, 255, 255, 0.1);
+        border-top: 4px solid #00e0ff;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+
+      @media (max-width: 500px) {
+        .container {
+          width: 90%;
+          margin-top: 70px;
+          padding: 25px;
+        }
+      }
+
+	  html, body {
+		height: 100%;
+		margin: 0;
+		padding: 0;
+		overflow-y: auto; /* ✅ enable vertical scroll */
+		}
+
+		body {
+		background: radial-gradient(circle at top left, #0a0f1f, #000);
+		background-attachment: fixed; /* ✅ keep the glowing background fixed */
+		color: #fff;
+		font-family: 'Poppins', sans-serif;
+		overflow-x: hidden;
+		}
+
+		.container {
+		min-height: 100vh; /* ✅ ensures full height on all screens */
+		padding-bottom: 100px; /* ✅ add space for chart or footer */
+		overflow: visible;
+		}
+
+		/* Optional: ensure floating crypto icons don’t block scroll */
+		.crypto-bg img {
+		position: fixed;
+		z-index: -1;
+		pointer-events: none;
+		}
+
+	  
+    </style>
+  </head>
+
+  <body>
+    <!-- 🌌 Animated crypto background -->
+    <div class="crypto-bg">
+      <img src="https://cryptologos.cc/logos/ethereum-eth-logo.png" alt="ETH" />
+      <img src="https://dlabs.ai/wp-content/uploads/2021/09/price-prediction-e1641384743289.png" alt="BTC" />
+      <img src="https://cryptologos.cc/logos/cardano-ada-logo.png" alt="ADA" />
+      <img src="https://cryptologos.cc/logos/bitcoin-cash-bch-logo.svg?v=002" alt="AI" />
+      <img src="https://ethicsadvicelineforjournalists.org/wp-content/uploads/2020/06/predictions.png" alt="AI" />
+      <img src="https://cdn-icons-png.flaticon.com/512/4882/4882559.png" alt="ETH" />
+      <img src="https://d1nzzttg89jj6.cloudfront.net/assets/articles/1692348630/should-i-trust-crypto-price-prediction-services-1692348630.png" alt="BTC" />
+      <img src="https://markovate.com/wp-content/uploads/2023/12/Forecasting-Future_-The-Power-of-Predictive-AI.webp" alt="ADA" /> 
+    </div>
+
+    <div class="container">
+      <h1>💡 Ethereum AI Advisor</h1>
+      <p class="subtitle">Blockchain + AI powered trading insights</p>
+
+      <button id="connectWalletBtn">🔗 Connect MetaMask</button>
+      <p id="walletAddress">Not connected</p>
+
+      <button id="payFeeBtn" disabled>💰 Pay 0.01 ETH</button>
+      <button id="getAdviceBtn" disabled>📈 Get AI Advice</button>
+
+      <div class="price" id="livePrice">ETH Price: Fetching...</div>
+
+      <div class="loader" id="loader"></div>
+
+      <div id="result" class="result-box">
+        <p style="text-align:center; color:#777;">Your AI advice will appear here 👇</p>
+      </div>
+    </div>
+
+    <script>
+      let web3;
+      let userAccount;
+      const contractAddress = "0xA48371A66ea8190b11F2725a4B8A90D65fA90E64"; // your contract address
+      const contractABI = [
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "_feeInWei",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "nonpayable",
+		"type": "constructor"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "string",
+				"name": "advice",
+				"type": "string"
+			}
+		],
+		"name": "AdviceGiven",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
+			}
+		],
+		"name": "PaymentReceived",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "bool",
+				"name": "hasPaidStatus",
+				"type": "bool"
+			}
+		],
+		"name": "PaymentStatus",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "owner",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
+			}
+		],
+		"name": "Withdraw",
+		"type": "event"
+	},
+	{
+		"inputs": [],
+		"name": "checkContractBalance",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "_user",
+				"type": "address"
+			}
+		],
+		"name": "checkHasPaid",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "fee",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "getAdvice",
+		"outputs": [
+			{
+				"internalType": "string",
+				"name": "",
+				"type": "string"
+			}
+		],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"name": "hasPaid",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "owner",
+		"outputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "payForAdvice",
+		"outputs": [],
+		"stateMutability": "payable",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "withdraw",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	}
+];
+      let contract;
+
+      window.addEventListener("load", async () => {
+        if (window.ethereum) {
+          web3 = new Web3(window.ethereum);
+          contract = new web3.eth.Contract(contractABI, contractAddress);
+          document.getElementById("connectWalletBtn").onclick = connectWallet;
+          document.getElementById("payFeeBtn").onclick = payForAdvice;
+          document.getElementById("getAdviceBtn").onclick = getAdvice;
+          fetchLiveETHPrice(); // Initial load
+          setInterval(fetchLiveETHPrice, 600000); // update every 10 minutes
+        } else {
+          alert("MetaMask not detected. Please install it.");
+        }
+      });
+
+      async function connectWallet() {
+        try {
+          const accounts = await ethereum.request({ method: "eth_requestAccounts" });
+          userAccount = accounts[0];
+          document.getElementById("walletAddress").innerText = "Connected: " + userAccount;
+          document.getElementById("payFeeBtn").disabled = false;
+        } catch (err) {
+          console.error(err);
+          alert("Wallet connection failed.");
+        }
+      }
+
+      async function payForAdvice() {
+        try {
+          const fee = web3.utils.toWei("0.01", "ether");
+          await contract.methods.payForAdvice().send({
+            from: userAccount,
+            value: fee,
+            gas: 6000000
+          });
+          alert("✅ Payment successful!");
+          document.getElementById("getAdviceBtn").disabled = false;
+        } catch (err) {
+          console.error(err);
+          alert("❌ Payment failed. Check console for details.");
+        }
+      }
+
+      async function getAdvice() {
+        try {
+          const loader = document.getElementById("loader");
+          loader.style.display = "block";
+          const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+          const userAddress = accounts[0];
+
+          const response = await fetch(`/get_advice/?address=${userAddress}`);
+          const text = await response.text();
+          let data;
+          try {
+            data = JSON.parse(text);
+          } catch (parseError) {
+            console.error("Backend returned HTML, not JSON:", text);
+            alert("Server error (not JSON). Check Django console.");
+            loader.style.display = "none";
+            return;
+          }
+
+          if (!response.ok) {
+            console.error("Server error:", data);
+            alert("Server error: " + (data.error || "Unknown"));
+            loader.style.display = "none";
+            return;
+          }
+
+          document.getElementById("result").innerHTML = `
+            <strong>Advice:</strong> ${data.advice}<br>
+            <strong>Current Price:</strong> $${data.current_price.toFixed(2)}<br>
+            <strong>Predicted Price:</strong> $${data.predicted_price.toFixed(2)}<br>
+            <strong>Current Time:</strong> ${data.current_time}<br>
+            <strong>Predicted Time:</strong> ${data.predicted_time}<br><br>
+            <img src="data:image/png;base64,${data.plot_image}" alt="Prediction Graph">
+          `;
+          loader.style.display = "none";
+        } catch (error) {
+          console.error("Error:", error);
+          alert("Error: " + error.message);
+          document.getElementById("loader").style.display = "none";
+        }
+      }
+
+      // 🪙 Fetch live ETH price from CoinGecko
+      async function fetchLiveETHPrice() {
+        try {
+          const res = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd");
+          const data = await res.json();
+          const ethPrice = data.ethereum.usd;
+          document.getElementById("livePrice").innerText = `💲 Live ETH Price: $${ethPrice}`;
+        } catch (err) {
+          document.getElementById("livePrice").innerText = "⚠️ Failed to fetch ETH price";
+        }
+      }
+    </script>
+  </body>
+</html> {% endcomment %}
+
+
+

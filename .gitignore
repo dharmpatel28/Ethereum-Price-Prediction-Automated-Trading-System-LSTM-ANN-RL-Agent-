@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environment
+venv/
+.env
+
+# Node (if any)
+node_modules/
+
+# Hardhat leftovers
+artifacts/
+cache/
+
+# Logs
+*.log
+
+# Data files (important for big projects)
+*.csv
+*.pkl
+*.h5

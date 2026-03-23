@@ -1,0 +1,1908 @@
+{% comment %} <!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RL Trading Bot</title>
+<script src="https://cdn.jsdelivr.net/npm/web3@1.10.4/dist/web3.min.js"></script>
+
+<style>
+body {
+  font-family: Arial;
+  background: #0c0c0c;
+  color: white;
+  text-align: center;
+}
+.container {
+  max-width: 600px;
+  margin: auto;
+}
+button {
+  padding: 12px;
+  margin: 10px;
+  width: 100%;
+  background: #00ff88;
+  border: none;
+  border-radius: 8px;
+}
+.section {
+  border: 1px solid #333;
+  padding: 15px;
+  margin: 20px 0;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<h1>🚀 RL Trading Bot</h1>
+
+<button id="connectBtn">Connect MetaMask</button>
+<div style="margin:10px 0; font-size:0.95em; color:#00ff88;">
+  Wallet Balance: <span id="walletBalance">0 ETH</span>
+</div>
+<div id="wallet"></div>
+
+<div style="margin-top:15px; background: rgba(0,0,0,0.3); padding:15px; border-radius:12px;">
+  <h4>💰 Wallet History</h4>
+  <div id="balanceHistory" style="max-height:200px; overflow-y:auto; font-size:0.9em; color:#00ff88;">
+    No history yet...
+  </div>
+</div>
+
+<!-- PAY + ACTIVATE -->
+<div class="section">
+  <h3>Unlock RL Bot</h3>
+  <button id="payRLBtn">Pay 0.05 ETH</button>
+  <div id="rlStatus"></div>
+</div>
+
+<!-- CREATE STRATEGY -->
+<div id="newStrategyForm" style="display:none; background:#1a1a2e; padding:20px; border-radius:12px; margin:15px 0;">
+    <h4>➕ Create Trading Strategy</h4>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <input id="buyPrice" type="number" placeholder="Buy Price $" value="">
+        <input id="sellPrice" type="number" placeholder="Sell Price $" value="">
+        <input id="buyEthAmt" type="number" placeholder="Buy ETH Quantity" value="">
+        <input id="sellEthAmt" type="number" placeholder="Sell ETH Quantity" value="">
+        <input id="totalEthAmt" type="number" placeholder="Total ETH Quantity" value="">
+        <input id="commissionPct" type="number" placeholder="Commission %" value="2">
+        <input id="walletAddr" type="text" placeholder="Wallet..." readonly>
+    </div>
+    <button onclick="createFullStrategy()" 
+        style="width:100%;margin-top:15px;padding:15px;background:linear-gradient(45deg,#00ff88,#00cc66);
+        color:black;font-weight:bold;border:none;border-radius:8px;font-size:16px;">
+        🚀 Create & Start Bot
+    </button>
+</div>
+
+<!-- UPDATE STRATEGY -->
+<div class="section">
+  <h3>Update Strategy</h3>
+  <input id="newBuy" placeholder="New Buy Price">
+  <input id="newSell" placeholder="New Sell Price">
+  <button onclick="updateStrategy()">Update</button>
+</div>
+
+<!-- TOGGLE -->
+<div class="section">
+  <button onclick="toggleAgent()">Toggle Agent</button>
+</div>
+
+<!-- DASHBOARD -->
+<div class="section">
+  <h3>Bot Status</h3>
+  <div id="strategies"></div>
+</div>
+
+<!-- TRADES -->
+<div class="section">
+  <h3>Recent Trades</h3>
+  <div id="trades"></div>
+</div>
+
+</div>
+
+<script>
+let web3, account;
+let currentWallet = null;
+const CONTRACT_ADDRESS = "0xe2AfAc562f58e44704Eff7A7A1BdB85A7A806859";
+const CONTRACT_ABI = [
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "_adviceFeeInWei",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "_rlAgentFeeInWei",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "nonpayable",
+		"type": "constructor"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "string",
+				"name": "advice",
+				"type": "string"
+			}
+		],
+		"name": "AdviceGiven",
+		"type": "event"
+	},
+	{
+		"inputs": [],
+		"name": "getAdvice",
+		"outputs": [
+			{
+				"internalType": "string",
+				"name": "",
+				"type": "string"
+			}
+		],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "payForAdvice",
+		"outputs": [],
+		"stateMutability": "payable",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "payForRLAgent",
+		"outputs": [],
+		"stateMutability": "payable",
+		"type": "function"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
+			{
+				"indexed": true,
+				"internalType": "string",
+				"name": "service",
+				"type": "string"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
+			}
+		],
+		"name": "PaymentReceived",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
+			{
+				"indexed": true,
+				"internalType": "string",
+				"name": "service",
+				"type": "string"
+			},
+			{
+				"indexed": false,
+				"internalType": "bool",
+				"name": "status",
+				"type": "bool"
+			}
+		],
+		"name": "PaymentStatus",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "expiry",
+				"type": "uint256"
+			}
+		],
+		"name": "RLAgentActivated",
+		"type": "event"
+	},
+	{
+		"inputs": [],
+		"name": "withdraw",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "owner",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
+			}
+		],
+		"name": "Withdraw",
+		"type": "event"
+	},
+	{
+		"inputs": [],
+		"name": "adviceFee",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "checkContractBalance",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "_user",
+				"type": "address"
+			}
+		],
+		"name": "checkHasPaidAdvice",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "_user",
+				"type": "address"
+			}
+		],
+		"name": "checkHasPaidRLAgent",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			}
+		],
+		"name": "checkRLAgentAccess",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			}
+		],
+		"name": "getRLAgentExpiry",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"name": "hasPaidAdvice",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"name": "hasPaidRLAgent",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "owner",
+		"outputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"name": "rlAgentExpiry",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "rlAgentFee",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	}
+]; // keep same ABI
+
+// CONNECT
+document.getElementById("connectBtn").onclick = async () => {
+    const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+    account = accounts[0];
+    web3 = new Web3(window.ethereum);
+	currentWallet = account;
+    document.getElementById("wallet").innerText = account;
+
+    fetchStatus();
+	updateWalletBalance();       // ✅ Update balance immediately
+    setInterval(updateWalletBalance, 10000);
+	//show create strategy only for new users
+    checkIfNewUser();
+};
+
+let lastBalance = null;       // Last known balance in ETH
+let balanceHistory = [];      // Array to store {timestamp, change, balance}
+
+// Call this every 10s or after transactions
+async function updateWalletBalance() {
+    if (!account || !web3) return;
+
+    try {
+        const balanceWei = await web3.eth.getBalance(account);
+        const balanceEth = parseFloat(web3.utils.fromWei(balanceWei, "ether"));
+
+        // Update main display
+        document.getElementById("walletBalance").textContent = `${balanceEth.toFixed(4)} ETH`;
+
+        // Compare with last known balance
+        if (lastBalance !== null && balanceEth !== lastBalance) {
+            const diff = balanceEth - lastBalance;
+            const now = new Date();
+            balanceHistory.unshift({
+                timestamp: now.toLocaleString(),
+                change: diff,
+                balance: balanceEth
+            });
+            displayBalanceHistory();
+        }
+
+        lastBalance = balanceEth; // Update lastBalance
+    } catch (err) {
+        console.error("Failed to fetch balance:", err);
+        document.getElementById("walletBalance").textContent = "N/A";
+    }
+}
+
+// Display the balance history
+function displayBalanceHistory() {
+    const container = document.getElementById("balanceHistory");
+    if (balanceHistory.length === 0) {
+        container.innerHTML = "No history yet...";
+        return;
+    }
+
+    container.innerHTML = balanceHistory
+        .slice(0, 20) // show last 20 changes
+        .map(entry => {
+            const sign = entry.change >= 0 ? "+" : "-";
+            const color = entry.change >= 0 ? "#00ff88" : "#ff6666";
+            return `<div style="padding:4px 0; border-bottom:1px solid #222;">
+                        <span>${entry.timestamp}</span> 
+                        <span style="color:${color}; font-weight:bold;">${sign}${Math.abs(entry.change).toFixed(4)} ETH</span> 
+                        (Balance: ${entry.balance.toFixed(4)} ETH)
+                    </div>`;
+        })
+        .join("");
+}
+
+// Start polling
+setInterval(updateWalletBalance, 10000);
+
+async function checkBalanceBeforeTrade(requiredEth) {
+    const balanceWei = await web3.eth.getBalance(account);
+    const balanceEth = parseFloat(web3.utils.fromWei(balanceWei, "ether"));
+    
+    if (balanceEth < requiredEth) {
+        alert(`Insufficient balance. You have ${balanceEth} ETH, need at least ${requiredEth} ETH`);
+        return false;
+    }
+    return true;
+}
+
+// PAY RL
+document.getElementById("payRLBtn").onclick = async () => {
+    const contract = new web3.eth.Contract(CONTRACT_ABI, CONTRACT_ADDRESS);
+    
+    try {
+        await contract.methods.payForRLAgent().send({
+            from: account,
+            value: web3.utils.toWei("0.05", "ether"),
+            gas: 300000
+        });
+
+        alert("✅ RL Payment Successful - Bot unlocked for 24h");
+
+        // 🔥 FORCE BACKEND SYNC
+        await fetch("/rl/api/enroll-rl/", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                wallet_address: account,
+                agent_enabled: true,
+                is_active: true
+            })
+        });
+
+        // 🔥 IMMEDIATE UI UPDATE WITH COUNTDOWN
+        updateRLStatus();
+        setInterval(updateRLStatus, 10000);  // refresh countdown every 10s
+    } catch (err) {
+        alert("RL Payment failed: " + err.message);
+    }
+};
+
+// Countdown & status display
+async function updateRLStatus() {
+    const contract = new web3.eth.Contract(CONTRACT_ABI, CONTRACT_ADDRESS);
+    const expiry = await contract.methods.getRLAgentExpiry(account).call();
+    const now = Math.floor(Date.now() / 1000);
+    let remaining = expiry - now;
+
+    const statusEl = document.getElementById("rlStatus");
+
+    if (remaining > 0) {
+        const hours = Math.floor(remaining / 3600);
+        const mins = Math.floor((remaining % 3600) / 60);
+        const secs = remaining % 60;
+        statusEl.textContent = `Active (${hours}h ${mins}m ${secs}s left)`;
+        statusEl.className = "status status-active";
+    } else {
+        statusEl.textContent = "Inactive";
+        statusEl.className = "status status-inactive";
+    }
+}
+
+// CREATE STRATEGY
+async function createFullStrategy() {
+    // 1️⃣ Safety check: wallet connected
+    if (!currentWallet) {
+        alert('Connect MetaMask first');
+        return;
+    }
+
+    // 2️⃣ Collect strategy data safely
+    const strategyData = {
+        wallet_address: account,
+        buy_price: parseFloat(document.getElementById('buyPrice')?.value || 3500),
+        sell_price: parseFloat(document.getElementById('sellPrice')?.value || 3700),
+        buy_eth_amount: parseFloat(document.getElementById('buyEthAmt')?.value || 0.1),
+        sell_eth_amount: parseFloat(document.getElementById('sellEthAmt')?.value || 0.1),
+        eth_amount: parseFloat(document.getElementById('totalEthAmt')?.value || 1.0),
+        commission_percent: parseFloat(document.getElementById('commissionPct')?.value || 2.0)
+    };
+
+    // 3️⃣ Validation
+    if (!strategyData.buy_price || !strategyData.sell_price) {
+        alert('Enter valid Buy/Sell prices');
+        return;
+    }
+
+    try {
+        // 4️⃣ Send API request to create strategy
+        const res = await fetch('/rl/api/create-full-strategy/', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(strategyData)
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            alert(`✅ Strategy #${data.id} created!\nBuy $${strategyData.buy_price}\nSell $${strategyData.sell_price}`);
+
+            // 5️⃣ Hide form after creation
+            document.getElementById('newStrategyForm').style.display = 'none';
+
+            // 6️⃣ Refresh dashboard immediately
+            fetchStatus();
+        } else {
+            alert('Failed to create strategy: ' + (data.error || 'Unknown error'));
+        }
+    } catch (e) {
+        alert('Network error: ' + e.message);
+    }
+}
+
+async function checkIfNewUser() {
+    if (!account) return;
+
+    try {
+        const res = await fetch(`/rl/api/bot-status/?wallet=${account}`);
+        const data = await res.json();
+
+        // If no strategies exist, show form
+        const isNewUser = !data.strategies || data.strategies.length === 0;
+
+        document.getElementById('newStrategyForm').style.display = isNewUser ? 'block' : 'none';
+    } catch (err) {
+        console.error('Failed to check new user:', err);
+        document.getElementById('newStrategyForm').style.display = 'none';
+    }
+}
+
+// UPDATE STRATEGY
+async function updateStrategy() {
+    await fetch("/rl/api/update-strategy/", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+            wallet_address: account,
+            buy_price: parseFloat(document.getElementById("newBuy").value),
+            sell_price: parseFloat(document.getElementById("newSell").value)
+        })
+    });
+
+    alert("Updated");
+    fetchStatus();
+}
+
+// TOGGLE AGENT
+async function toggleAgent() {
+    const res = await fetch("/rl/api/toggle-agent/", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ wallet_address: account })
+    });
+
+    const data = await res.json();
+
+    if (data.success) {
+        alert(data.agent_enabled ? "✅ Agent ENABLED" : "❌ Agent DISABLED");
+    } else {
+        alert("Toggle failed");
+    }
+
+    fetchStatus(); // refresh UI
+}
+
+// FETCH STATUS
+async function fetchStatus() {
+	if (!account) return;
+    const res = await fetch(`/rl/api/bot-status/?wallet=${account}`);
+    const data = await res.json();
+
+    const container = document.getElementById("strategies");
+
+    if (!data.strategies || data.strategies.length === 0) {
+        container.innerHTML = "<p>No active strategy</p>";
+        return;
+    }
+
+    let html = "";
+
+    data.strategies.forEach(s => {
+        html += `
+        <div style="border:1px solid #444;padding:15px;margin:10px;border-radius:10px;">
+            <p><b>Wallet:</b> ${s.wallet.slice(0,6)}...${s.wallet.slice(-4)}</p>
+            <p><b>Agent:</b> ${s.agent_enabled ? '🟢 ON' : '🔴 OFF'}</p>
+            <p><b>Status:</b> ${s.is_active ? 'Active' : 'Inactive'}</p>
+            <p><b>Trading:</b> ${s.is_trading ? 'Running' : 'Stopped'}</p>
+            <p><b>Price:</b> $${s.current_price}</p>
+            <p><b>Buy:</b> $${s.buy_price} | <b>Sell:</b> $${s.sell_price}</p>
+        </div>
+        `;
+    });
+
+    container.innerHTML = html;
+
+	document.getElementById("rlStatus").innerHTML =
+    data.strategies[0].agent_enabled
+        ? "🟢 RL ACTIVE"
+        : "🔴 RL INACTIVE";
+    fetchTrades();
+}
+
+// FETCH TRADES
+async function fetchTrades() {
+    const res = await fetch(`/rl/api/trades/?wallet=${account}`);
+    const data = await res.json();
+
+    const container = document.getElementById("trades");
+
+    if (!data.trades || data.trades.length === 0) {
+        container.innerHTML = "No trades yet...";
+        return;
+    }
+
+    let html = "";
+
+    data.trades.forEach(t => {
+        html += `
+        <div style="border-bottom:1px solid #333;padding:10px;">
+            ${t.action} ${t.eth_amount} ETH @ $${t.price} ${t.created_at}
+        </div>`;
+    });
+
+    container.innerHTML = html;
+}
+
+// AUTO REFRESH
+setInterval(fetchStatus, 10000);
+</script>
+
+</body>
+</html> {% endcomment %}
+
+{% comment %} ----------------------------------------------------------------------------------- {% endcomment %}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RL Trading Bot</title>
+<script src="https://cdn.jsdelivr.net/npm/web3@1.10.4/dist/web3.min.js"></script>
+
+<style>
+*{
+  margin:0;
+  padding:0;
+  box-sizing:border-box;
+  font-family: "Inter", sans-serif;
+}
+
+{% comment %} body{
+  background: linear-gradient(135deg, #0f172a, #020617);
+  color: #e2e8f0;
+} {% endcomment %}
+body{
+  background: linear-gradient(135deg, #111827, #020617);
+  color: #e2e8f0;
+}
+
+th {
+  font-weight: 500;
+  letter-spacing: 0.3px;
+}
+
+/* LAYOUT */
+.app{
+  display:grid;
+  grid-template-columns: 300px 1fr;
+  height:100vh;
+}
+
+/* SIDEBAR */
+{% comment %} .sidebar{
+  background: rgba(15,23,42,0.7);
+  backdrop-filter: blur(20px);
+  padding:20px;
+  border-right:1px solid rgba(255,255,255,0.05);
+} {% endcomment %}
+
+.sidebar{
+  background: rgba(30,41,59,0.7);
+  backdrop-filter: blur(0px);
+  padding:20px;
+  border-right:1px solid rgba(148,163,184,0.1);
+}
+
+.logo{
+  font-size:20px;
+  font-weight:600;
+  margin-bottom:20px;
+}
+
+button{
+  width:100%;
+  padding:12px;
+  border-radius:10px;
+  border:none;
+  background:#1e293b;
+  color:white;
+  margin-top:10px;
+  cursor:pointer;
+  transition:0.2s;
+}
+
+button:hover{
+  background:#334155;
+}
+
+/* MAIN */
+.main{
+  padding:25px;
+  overflow-y:auto;
+}
+
+/* TOP BAR */
+.topbar{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:20px;
+}
+
+.wallet-box{
+  background: rgba(255,255,255,0.03);
+  padding:10px 15px;
+  border-radius:12px;
+}
+
+/* CARDS */
+{% comment %} .card{
+  background: rgba(255,255,255,0.04);
+  border:1px solid rgba(255,255,255,0.05);
+  border-radius:16px;
+  padding:20px;
+  margin-bottom:20px;
+} {% endcomment %}
+
+.card{
+  background: rgba(30,41,59,0.6); /* brighter than before */
+  border: 1px solid rgba(148,163,184,0.15);
+  border-radius:16px;
+  padding:20px;
+  margin-bottom:20px;
+  backdrop-filter: blur(px);
+}
+
+/* GRID */
+.grid{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap:20px;
+}
+
+/* AI PANEL */
+.ai-panel{
+  background: linear-gradient(135deg, rgba(59,130,246,0.25), rgba(99,102,241,0.15));
+  border:1px solid rgba(99,102,241,0.2);
+}
+
+.ai-title{
+  font-size:18px;
+  margin-bottom:10px;
+}
+
+.ai-stream{
+  font-size:13px;
+  color:#94a3b8;
+  line-height:1.6;
+}
+
+/* FORM */
+input{
+  width:100%;
+  padding:10px;
+  border-radius:8px;
+  border:none;
+  background:#020617;
+  color:white;
+}
+
+.form-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+}
+
+/* STATUS */
+.status{
+  font-size:14px;
+  margin-top:10px;
+}
+
+.status-active{
+  color:#22c55e;
+}
+
+.status-inactive{
+  color:#ef4444;
+}
+
+#aiBg {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    pointer-events: none;
+    background: #0b0b0f; /* slightly softer black */
+  }
+.app{
+  position: relative;
+  z-index:1; /* UI above canvas */
+}	
+
+/* SCROLL */
+::-webkit-scrollbar{
+  width:6px;
+}
+::-webkit-scrollbar-thumb{
+  background:#1e293b;
+}
+</style>
+
+</head>
+
+<body>
+	
+	<canvas id="aiBg"></canvas>
+
+<div class="app">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="logo">🤖 RL AI Terminal</div>
+
+    <button id="connectBtn">Connect Wallet</button>
+    <div id="wallet" style="font-size:12px;margin-top:10px;"></div>
+
+    <div class="card">
+      <div>Balance</div>
+      <div id="walletBalance">0 ETH</div>
+    </div>
+
+    <div class="card">
+      <div>RL Access</div>
+      <button id="payRLBtn">Unlock (0.05 ETH)</button>
+      <div id="rlStatus" class="status"></div>
+    </div>
+
+    <div class="card">
+      <button onclick="toggleAgent()">Toggle Agent</button>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <!-- TOP -->
+    <div class="topbar">
+      <h2>AI Trading Dashboard</h2>
+      <div class="wallet-box">Live AI Engine Active</div>
+    </div>
+
+    <!-- AI PANEL -->
+    <div class="card ai-panel">
+      <div class="ai-title">🧠 AI Market Analysis</div>
+      <div class="ai-stream">
+        • Scanning ETH volatility patterns...<br>
+        • Detecting liquidity zones...<br>
+        • Reinforcement model adjusting weights...<br>
+        • Predictive confidence: <b>87%</b><br>
+        • Suggested action: <b>WAIT</b>
+      </div>
+    </div>
+
+    <!-- STRATEGY FORM -->
+    <div id="newStrategyForm" class="card" style="display:none;">
+      <h3>Create Strategy</h3>
+      <div class="form-grid">
+        <input id="buyPrice" placeholder="Buy Price">
+        <input id="sellPrice" placeholder="Sell Price">
+        <input id="buyEthAmt" placeholder="Buy ETH">
+        <input id="sellEthAmt" placeholder="Sell ETH">
+        <input id="totalEthAmt" placeholder="Total ETH">
+        <input id="commissionPct" placeholder="Commission %">
+      </div>
+      <button onclick="createFullStrategy()">Start AI Trading</button>
+    </div>
+
+    <!-- GRID -->
+    <div class="grid">
+
+      <div class="card">
+        <h3>Strategies</h3>
+        <div id="strategies"></div>
+      </div>
+
+      <div class="card">
+        <h3>Recent Trades</h3>
+        <div id="trades"></div>
+      </div>
+
+    </div>
+
+    <!-- HISTORY -->
+    <div class="card">
+      <h3>Wallet Activity</h3>
+      <div id="balanceHistory"></div>
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+let web3, account;
+let currentWallet = null;
+const CONTRACT_ADDRESS = "0xe2AfAc562f58e44704Eff7A7A1BdB85A7A806859";
+const CONTRACT_ABI = [
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "_adviceFeeInWei",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "_rlAgentFeeInWei",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "nonpayable",
+		"type": "constructor"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "string",
+				"name": "advice",
+				"type": "string"
+			}
+		],
+		"name": "AdviceGiven",
+		"type": "event"
+	},
+	{
+		"inputs": [],
+		"name": "getAdvice",
+		"outputs": [
+			{
+				"internalType": "string",
+				"name": "",
+				"type": "string"
+			}
+		],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "payForAdvice",
+		"outputs": [],
+		"stateMutability": "payable",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "payForRLAgent",
+		"outputs": [],
+		"stateMutability": "payable",
+		"type": "function"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
+			{
+				"indexed": true,
+				"internalType": "string",
+				"name": "service",
+				"type": "string"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
+			}
+		],
+		"name": "PaymentReceived",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
+			{
+				"indexed": true,
+				"internalType": "string",
+				"name": "service",
+				"type": "string"
+			},
+			{
+				"indexed": false,
+				"internalType": "bool",
+				"name": "status",
+				"type": "bool"
+			}
+		],
+		"name": "PaymentStatus",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "expiry",
+				"type": "uint256"
+			}
+		],
+		"name": "RLAgentActivated",
+		"type": "event"
+	},
+	{
+		"inputs": [],
+		"name": "withdraw",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "owner",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
+			}
+		],
+		"name": "Withdraw",
+		"type": "event"
+	},
+	{
+		"inputs": [],
+		"name": "adviceFee",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "checkContractBalance",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "_user",
+				"type": "address"
+			}
+		],
+		"name": "checkHasPaidAdvice",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "_user",
+				"type": "address"
+			}
+		],
+		"name": "checkHasPaidRLAgent",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			}
+		],
+		"name": "checkRLAgentAccess",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			}
+		],
+		"name": "getRLAgentExpiry",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"name": "hasPaidAdvice",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"name": "hasPaidRLAgent",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "owner",
+		"outputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"name": "rlAgentExpiry",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "rlAgentFee",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	}
+]; // keep same ABI
+
+// CONNECT
+document.getElementById("connectBtn").onclick = async () => {
+    const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+    account = accounts[0];
+    web3 = new Web3(window.ethereum);
+	currentWallet = account;
+    document.getElementById("wallet").innerText = account;
+
+    fetchStatus();
+	updateWalletBalance();       // ✅ Update balance immediately
+    setInterval(updateWalletBalance, 10000);
+	//show create strategy only for new users
+    checkIfNewUser();
+};
+
+let lastBalance = null;       // Last known balance in ETH
+let balanceHistory = [];      // Array to store {timestamp, change, balance}
+
+// Call this every 10s or after transactions
+async function updateWalletBalance() {
+    if (!account || !web3) return;
+
+    try {
+        const balanceWei = await web3.eth.getBalance(account);
+        const balanceEth = parseFloat(web3.utils.fromWei(balanceWei, "ether"));
+
+        // Update main display
+        document.getElementById("walletBalance").textContent = `${balanceEth.toFixed(4)} ETH`;
+
+        // Compare with last known balance
+        if (lastBalance !== null && balanceEth !== lastBalance) {
+            const diff = balanceEth - lastBalance;
+            const now = new Date();
+            balanceHistory.unshift({
+                timestamp: now.toLocaleString(),
+                change: diff,
+                balance: balanceEth
+            });
+            displayBalanceHistory();
+        }
+
+        lastBalance = balanceEth; // Update lastBalance
+    } catch (err) {
+        console.error("Failed to fetch balance:", err);
+        document.getElementById("walletBalance").textContent = "N/A";
+    }
+}
+
+// Display the balance history
+function displayBalanceHistory() {
+    const container = document.getElementById("balanceHistory");
+    if (balanceHistory.length === 0) {
+        container.innerHTML = "No history yet...";
+        return;
+    }
+
+    container.innerHTML = balanceHistory
+        .slice(0, 20) // show last 20 changes
+        .map(entry => {
+            const sign = entry.change >= 0 ? "+" : "-";
+            const color = entry.change >= 0 ? "#00ff88" : "#ff6666";
+            return `<div style="padding:4px 0; border-bottom:1px solid #222;">
+                        <span>${entry.timestamp}</span> 
+                        <span style="color:${color}; font-weight:bold;">${sign}${Math.abs(entry.change).toFixed(4)} ETH</span> 
+                        (Balance: ${entry.balance.toFixed(4)} ETH)
+                    </div>`;
+        })
+        .join("");
+}
+
+// Start polling
+setInterval(updateWalletBalance, 10000);
+
+async function checkBalanceBeforeTrade(requiredEth) {
+    const balanceWei = await web3.eth.getBalance(account);
+    const balanceEth = parseFloat(web3.utils.fromWei(balanceWei, "ether"));
+    
+    if (balanceEth < requiredEth) {
+        alert(`Insufficient balance. You have ${balanceEth} ETH, need at least ${requiredEth} ETH`);
+        return false;
+    }
+    return true;
+}
+
+// PAY RL
+document.getElementById("payRLBtn").onclick = async () => {
+    const contract = new web3.eth.Contract(CONTRACT_ABI, CONTRACT_ADDRESS);
+    
+    try {
+        await contract.methods.payForRLAgent().send({
+            from: account,
+            value: web3.utils.toWei("0.05", "ether"),
+            gas: 300000
+        });
+
+        alert("✅ RL Payment Successful - Bot unlocked for 24h");
+
+        // 🔥 FORCE BACKEND SYNC
+        await fetch("/rl/api/enroll-rl/", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                wallet_address: account,
+                agent_enabled: true,
+                is_active: true
+            })
+        });
+
+        // 🔥 IMMEDIATE UI UPDATE WITH COUNTDOWN
+        updateRLStatus();
+        setInterval(updateRLStatus, 10000);  // refresh countdown every 10s
+    } catch (err) {
+        alert("RL Payment failed: " + err.message);
+    }
+};
+
+// Countdown & status display
+async function updateRLStatus() {
+    const contract = new web3.eth.Contract(CONTRACT_ABI, CONTRACT_ADDRESS);
+    const expiry = await contract.methods.getRLAgentExpiry(account).call();
+    const now = Math.floor(Date.now() / 1000);
+    let remaining = expiry - now;
+
+    const statusEl = document.getElementById("rlStatus");
+
+    if (remaining > 0) {
+        const hours = Math.floor(remaining / 3600);
+        const mins = Math.floor((remaining % 3600) / 60);
+        const secs = remaining % 60;
+        statusEl.textContent = `Active (${hours}h ${mins}m ${secs}s left)`;
+        statusEl.className = "status status-active";
+    } else {
+        statusEl.textContent = "Inactive";
+        statusEl.className = "status status-inactive";
+    }
+}
+
+// CREATE STRATEGY
+async function createFullStrategy() {
+    // 1️⃣ Safety check: wallet connected
+    if (!currentWallet) {
+        alert('Connect MetaMask first');
+        return;
+    }
+
+    // 2️⃣ Collect strategy data safely
+    const strategyData = {
+        wallet_address: account,
+        buy_price: parseFloat(document.getElementById('buyPrice')?.value || 3500),
+        sell_price: parseFloat(document.getElementById('sellPrice')?.value || 3700),
+        buy_eth_amount: parseFloat(document.getElementById('buyEthAmt')?.value || 0.1),
+        sell_eth_amount: parseFloat(document.getElementById('sellEthAmt')?.value || 0.1),
+        eth_amount: parseFloat(document.getElementById('totalEthAmt')?.value || 1.0),
+        commission_percent: parseFloat(document.getElementById('commissionPct')?.value || 2.0)
+    };
+
+    // 3️⃣ Validation
+    if (!strategyData.buy_price || !strategyData.sell_price) {
+        alert('Enter valid Buy/Sell prices');
+        return;
+    }
+
+    try {
+        // 4️⃣ Send API request to create strategy
+        const res = await fetch('/rl/api/create-full-strategy/', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(strategyData)
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            alert(`✅ Strategy #${data.id} created!\nBuy $${strategyData.buy_price}\nSell $${strategyData.sell_price}`);
+
+            // 5️⃣ Hide form after creation
+            document.getElementById('newStrategyForm').style.display = 'none';
+
+            // 6️⃣ Refresh dashboard immediately
+            fetchStatus();
+        } else {
+            alert('Failed to create strategy: ' + (data.error || 'Unknown error'));
+        }
+    } catch (e) {
+        alert('Network error: ' + e.message);
+    }
+}
+
+async function checkIfNewUser() {
+    if (!account) return;
+
+    try {
+        const res = await fetch(`/rl/api/bot-status/?wallet=${account}`);
+        const data = await res.json();
+
+        // If no strategies exist, show form
+        const isNewUser = !data.strategies || data.strategies.length === 0;
+
+        document.getElementById('newStrategyForm').style.display = isNewUser ? 'block' : 'none';
+    } catch (err) {
+        console.error('Failed to check new user:', err);
+        document.getElementById('newStrategyForm').style.display = 'none';
+    }
+}
+
+// UPDATE STRATEGY
+async function updateStrategyById(strategyId) {
+    const buy = document.getElementById(`buy-${strategyId}`).value;
+    const sell = document.getElementById(`sell-${strategyId}`).value;
+
+    if (!buy && !sell) {
+        alert("Enter at least one value");
+        return;
+    }
+
+    try {
+        const res = await fetch("/rl/api/update-strategy/", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                wallet_address: account,
+                strategy_id: strategyId,
+                buy_price: buy ? parseFloat(buy) : null,
+                sell_price: sell ? parseFloat(sell) : null
+            })
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            alert("✅ Strategy updated");
+
+            // Auto close edit panel
+            document.getElementById(`edit-${strategyId}`).style.display = "none";
+
+            fetchStatus(); // refresh UI
+        } else {
+            alert("Update failed: " + data.error);
+        }
+
+    } catch (err) {
+        alert("Network error: " + err.message);
+    }
+}
+
+async function deleteStrategy(strategyId) {
+    console.log("DELETE CLICK:", strategyId, account);
+
+    if (!strategyId) {
+        alert("Invalid strategy ID");
+        return;
+    }
+
+    if (!confirm("Are you sure you want to delete this strategy?")) return;
+
+    try {
+        const res = await fetch("/rl/api/delete-strategy/", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                wallet_address: account,
+                strategy_id: strategyId
+            })
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            alert("🗑️ Strategy deleted");
+            fetchStatus(); // refresh UI
+        } else {
+            alert("Delete failed: " + data.error);
+        }
+
+    } catch (err) {
+        alert("Network error: " + err.message);
+    }
+}
+
+// TOGGLE AGENT
+async function toggleAgent() {
+    const res = await fetch("/rl/api/toggle-agent/", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ wallet_address: account })
+    });
+
+    const data = await res.json();
+
+    if (data.success) {
+        alert(data.agent_enabled ? "✅ Agent ENABLED" : "❌ Agent DISABLED");
+    } else {
+        alert("Toggle failed");
+    }
+
+    fetchStatus(); // refresh UI
+}
+
+function toggleEdit(strategyId) {
+    const el = document.getElementById(`edit-${strategyId}`);
+    el.style.display = (el.style.display === "none") ? "block" : "none";
+}
+
+// FETCH STATUS
+async function fetchStatus() {
+	if (!account) return;
+    const res = await fetch(`/rl/api/bot-status/?wallet=${account}`);
+    const data = await res.json();
+
+    const container = document.getElementById("strategies");
+
+    if (!data.strategies || data.strategies.length === 0) {
+        container.innerHTML = "<p>No active strategy</p>";
+        return;
+    }
+
+    let html = "";
+
+	data.strategies.forEach(s => {
+		html += `
+		<div style="border:1px solid #444;padding:15px;margin:10px;border-radius:10px;">
+
+			<p><b>Wallet:</b> ${s.wallet.slice(0,6)}...${s.wallet.slice(-4)}</p>
+			<p><b>Agent:</b> ${s.agent_enabled ? '🟢 ON' : '🔴 OFF'}</p>
+			<p><b>Status:</b> ${s.is_active ? 'Active' : 'Inactive'}</p>
+			<p><b>Trading:</b> ${s.is_trading ? 'Running' : 'Stopped'}</p>
+			<p><b>Price:</b> $${s.current_price}</p>
+
+			<p>
+				<b>Buy:</b> $${s.buy_price} | 
+				<b>Sell:</b> $${s.sell_price}
+			</p>
+
+			<!-- ACTION BUTTONS -->
+			<div style="margin-top:10px; display:flex; justify-content:space-between;">
+
+				<button onclick="toggleEdit(${s.id})"
+					style="background:#2563eb; width:auto; padding:6px 10px;">
+					✏️ Update Strategies
+				</button>
+
+				<button onclick="deleteStrategy(${s.id})"
+					style="background: rgba(239,68,68,0.15); color:#ef4444; width:auto;">
+					🗑
+				</button>
+
+			</div>
+
+			<!-- EDIT PANEL (HIDDEN) -->
+			<div id="edit-${s.id}" style="display:none; margin-top:10px;">
+				<input id="buy-${s.id}" value="" placeholder="New Buy Price">
+				<input id="sell-${s.id}" value="" placeholder="New Sell Price">
+
+				<button onclick="updateStrategyById(${s.id})"
+					style="margin-top:8px; background:#22c55e;">
+					Save
+				</button>
+
+				<button onclick="toggleEdit(${s.id})"
+					style="background:#334155; margin-top:5px;">
+					Cancel
+				</button>
+			</div>
+
+		</div>
+		`;
+	});
+
+container.innerHTML = html;
+
+	document.getElementById("rlStatus").innerHTML =
+    data.strategies[0].agent_enabled
+        ? "🟢 RL ACTIVE"
+        : "🔴 RL INACTIVE";
+    fetchTrades();
+}
+
+// FETCH TRADES
+async function fetchTrades() {
+    const res = await fetch(`/rl/api/trades/?wallet=${account}`);
+    const data = await res.json();
+
+    const container = document.getElementById("trades");
+
+    if (!data.trades || data.trades.length === 0) {
+        container.innerHTML = "No trades yet...";
+        return;
+    }
+
+    let html = `
+        <table style="width:100%; border-collapse:collapse; font-size:13px;">
+            <thead>
+                <tr style="text-align:left; border-bottom:1px solid #334155; color:#94a3b8;">
+                    <th style="padding:8px;">Type</th>
+                    <th style="padding:8px;">Amount (ETH)</th>
+                    <th style="padding:8px;">Price ($)</th>
+                    <th style="padding:8px;">Time</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    data.trades.forEach(t => {
+        const isBuy = t.action.toLowerCase() === "buy";
+
+        html += `
+            <tr style="border-bottom:1px solid #1e293b;">
+                <td style="padding:10px; font-weight:600; color:${isBuy ? '#22c55e' : '#ef4444'};">
+                    ${t.action.toUpperCase()}
+                </td>
+                <td style="padding:10px;">
+                    ${t.eth_amount}
+                </td>
+                <td style="padding:10px;">
+                    $${t.price}
+                </td>
+                <td style="padding:10px; color:#94a3b8;">
+                    ${t.created_at}
+                </td>
+            </tr>
+        `;
+    });
+
+    html += `</tbody></table>`;
+
+    container.innerHTML = html;
+}
+
+{% comment %} #bgbgbgbgbggbbg {% endcomment %}
+const canvas = document.getElementById('aiBg');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+// Neurons setup
+const neuronCount = 80;
+const neurons = [];
+for (let i = 0; i < neuronCount; i++) {
+  neurons.push({
+    x: Math.random() * canvas.width,
+    y: Math.random() * canvas.height,
+    vx: (Math.random() - 0.5) * 0.4,
+    vy: (Math.random() - 0.5) * 0.4,
+    radius: Math.random() * 1.8 + 1
+  });
+}
+
+function draw() {
+  // Slight trail fade
+  ctx.fillStyle = 'rgba(11,11,15,0.2)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Connections
+  for (let i = 0; i < neurons.length; i++) {
+    for (let j = i + 1; j < neurons.length; j++) {
+      const dx = neurons[i].x - neurons[j].x;
+      const dy = neurons[i].y - neurons[j].y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 130) {
+        ctx.strokeStyle = `rgba(135,206,250,${1 - dist/130})`; // light cyan
+        ctx.lineWidth = 0.4;
+        ctx.beginPath();
+        ctx.moveTo(neurons[i].x, neurons[i].y);
+        ctx.lineTo(neurons[j].x, neurons[j].y);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Move neurons and draw
+  neurons.forEach(n => {
+    n.x += n.vx;
+    n.y += n.vy;
+
+    // wrap edges
+    if (n.x < 0) n.x = canvas.width;
+    if (n.x > canvas.width) n.x = 0;
+    if (n.y < 0) n.y = canvas.height;
+    if (n.y > canvas.height) n.y = 0;
+
+    ctx.fillStyle = 'rgba(135,206,250,0.9)'; // light neuron color
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // Subtle moving stock wave
+  ctx.strokeStyle = 'rgba(173,216,230,0.12)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  const time = Date.now() / 100;
+  for (let x = 0; x < canvas.width; x += 3) {
+    const y = canvas.height / 2 + Math.sin((x + time)/50) * 45;
+    ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  requestAnimationFrame(draw);
+}
+
+draw();
+
+// AUTO REFRESH
+setInterval(fetchStatus, 10000);
+</script>
+
+</body>
+</html>

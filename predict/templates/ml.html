@@ -1,0 +1,1416 @@
+{% comment %} <!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ethereum AI Prediction</title>
+<script src="https://cdn.jsdelivr.net/npm/web3@1.10.4/dist/web3.min.js"></script>
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+
+body{
+font-family:'Segoe UI';
+background:linear-gradient(135deg,#0c0c0c,#1a1a2e,#16213e);
+color:white;
+min-height:100vh;
+}
+
+.container{
+max-width:500px;
+margin:50px auto;
+padding:30px;
+background:rgba(255,255,255,0.05);
+border-radius:20px;
+backdrop-filter:blur(20px);
+border:1px solid rgba(255,255,255,0.1);
+}
+
+h1{
+text-align:center;
+color:#00ff88;
+margin-bottom:10px;
+}
+
+.subtitle{
+text-align:center;
+color:#ccc;
+margin-bottom:30px;
+}
+
+button{
+width:100%;
+padding:15px;
+margin:10px 0;
+border:none;
+border-radius:12px;
+font-size:16px;
+cursor:pointer;
+background:linear-gradient(45deg,#00ff88,#00cc66);
+color:white;
+}
+
+button:disabled{
+background:#444;
+opacity:0.5;
+}
+
+.section{
+background:rgba(0,0,0,0.3);
+padding:20px;
+border-radius:12px;
+margin:20px 0;
+}
+
+#walletAddress{
+background:rgba(0,0,0,0.3);
+padding:12px;
+border-radius:8px;
+margin:15px 0;
+text-align:center;
+font-family:monospace;
+}
+
+.status{
+display:inline-block;
+padding:6px 12px;
+border-radius:20px;
+font-size:14px;
+margin-top:10px;
+}
+
+.status-active{
+background:rgba(0,255,136,0.2);
+color:#00ff88;
+border:1px solid #00ff88;
+}
+
+.status-inactive{
+background:rgba(255,0,0,0.2);
+color:#ff6666;
+border:1px solid #ff6666;
+}
+
+.price{
+text-align:center;
+font-size:1.3em;
+color:#00ff88;
+margin:20px 0;
+}
+
+.loader{
+border:4px solid rgba(255,255,255,0.1);
+border-top:4px solid #00ff88;
+border-radius:50%;
+width:40px;
+height:40px;
+animation:spin 1s linear infinite;
+margin:20px auto;
+display:none;
+}
+
+@keyframes spin{
+0%{transform:rotate(0)}
+100%{transform:rotate(360deg)}
+}
+
+#result{
+min-height:120px;
+background:rgba(0,0,0,0.4);
+border-radius:12px;
+padding:20px;
+margin-top:20px;
+text-align:center;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h1>🤖 Ethereum AI Predictor</h1>
+<p class="subtitle">Connect Wallet → Pay → Get Prediction</p>
+
+<button id="connectBtn">🔗 Connect MetaMask</button>
+<div id="walletAddress">Click to connect wallet</div>
+
+<div class="section">
+
+<h3>📈 AI Prediction ($10)</h3>
+
+<button id="payAdviceBtn" disabled>Pay 0.01 ETH</button>
+<button id="getAdviceBtn" disabled>Get Prediction</button>
+
+<span id="adviceStatus" class="status status-inactive">Not Paid</span>
+
+</div>
+
+<div class="price" id="ethPrice">Loading ETH price...</div>
+
+<div class="loader" id="loader"></div>
+
+<div id="result">Ready to predict 👇</div>
+
+</div>
+
+<script>
+
+const CONTRACT_ADDRESS="0xe2AfAc562f58e44704Eff7A7A1BdB85A7A806859";
+
+const CONTRACT_ABI=[
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "_adviceFeeInWei",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "_rlAgentFeeInWei",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "nonpayable",
+		"type": "constructor"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "string",
+				"name": "advice",
+				"type": "string"
+			}
+		],
+		"name": "AdviceGiven",
+		"type": "event"
+	},
+	{
+		"inputs": [],
+		"name": "getAdvice",
+		"outputs": [
+			{
+				"internalType": "string",
+				"name": "",
+				"type": "string"
+			}
+		],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "payForAdvice",
+		"outputs": [],
+		"stateMutability": "payable",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "payForRLAgent",
+		"outputs": [],
+		"stateMutability": "payable",
+		"type": "function"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
+			{
+				"indexed": true,
+				"internalType": "string",
+				"name": "service",
+				"type": "string"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
+			}
+		],
+		"name": "PaymentReceived",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
+			{
+				"indexed": true,
+				"internalType": "string",
+				"name": "service",
+				"type": "string"
+			},
+			{
+				"indexed": false,
+				"internalType": "bool",
+				"name": "status",
+				"type": "bool"
+			}
+		],
+		"name": "PaymentStatus",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "expiry",
+				"type": "uint256"
+			}
+		],
+		"name": "RLAgentActivated",
+		"type": "event"
+	},
+	{
+		"inputs": [],
+		"name": "withdraw",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "owner",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
+			}
+		],
+		"name": "Withdraw",
+		"type": "event"
+	},
+	{
+		"inputs": [],
+		"name": "adviceFee",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "checkContractBalance",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "_user",
+				"type": "address"
+			}
+		],
+		"name": "checkHasPaidAdvice",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "_user",
+				"type": "address"
+			}
+		],
+		"name": "checkHasPaidRLAgent",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			}
+		],
+		"name": "checkRLAgentAccess",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			}
+		],
+		"name": "getRLAgentExpiry",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"name": "hasPaidAdvice",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"name": "hasPaidRLAgent",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "owner",
+		"outputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"name": "rlAgentExpiry",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "rlAgentFee",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	}
+];
+
+let web3,account,contract,currentWallet;
+
+document.getElementById("connectBtn").onclick=async()=>{
+console.log("Connecting wallet...");
+if(!window.ethereum){
+alert("Install MetaMask");
+return;
+}
+
+// ml.html
+
+async function fetchAdvice() {
+    const address = document.getElementById("ethAddress").value;
+    const response = await fetch(`/ml/get_advice/?address=${address}`);
+    const data = await response.json();
+
+    if (data.error) {
+        alert(data.error);
+        return;
+    }
+
+    console.log("Advice:", data.advice);
+    // Update your HTML elements with data.current_price, data.predicted_price, etc.
+}
+
+
+const accounts=await window.ethereum.request({method:"eth_requestAccounts"});
+account=accounts[0];
+
+web3=new Web3(window.ethereum);
+contract=new web3.eth.Contract(CONTRACT_ABI,CONTRACT_ADDRESS);
+
+currentWallet=account;
+
+document.getElementById("walletAddress").innerHTML=
+account.slice(0,8)+"..."+account.slice(-6);
+
+document.getElementById("payAdviceBtn").disabled=false;
+
+updateStatus();
+getETHPrice();
+
+};
+
+document.getElementById("payAdviceBtn").onclick=async()=>{
+
+try{
+
+const fee=web3.utils.toWei("0.01","ether");
+
+await contract.methods.payForAdvice().send({
+from:account,
+value:fee
+});
+
+alert("Payment successful");
+
+updateStatus();
+
+}catch(err){
+alert("Payment failed "+err.message);
+}
+
+};
+
+document.getElementById("getAdviceBtn").onclick=async()=>{
+
+document.getElementById("loader").style.display="block";
+document.getElementById("result").innerHTML="AI analyzing ETH...";
+
+try{
+
+const res=await fetch(`/ml/get_advice/?address=${currentWallet}`);
+const data=await res.json();
+
+if(data.error){
+document.getElementById("result").innerHTML=data.error;
+return;
+}
+
+document.getElementById("result").innerHTML=`
+
+<h3>${data.advice}</h3>
+
+<p>Current Price: ${data.current_price ? '$' + data.current_price.toFixed(2) : 'N/A'}</p>
+<p>Current Time:</strong> ${data.current_time}</p>
+<p>Predicted Price: ${data.predicted_price ? '$' + data.predicted_price.toFixed(2) : 'N/A'}</p>
+<p>Predicted Time:</strong> ${data.predicted_time}</p>
+
+${data.plot_image ?
+`<img src="data:image/png;base64,${data.plot_image}" style="max-width:100%">`
+:""}
+
+`;
+
+}catch(e){
+    console.error("FULL ERROR:", e);
+    document.getElementById("result").innerHTML =
+        "Prediction failed: " + e.message;
+}
+
+document.getElementById("loader").style.display="none";
+
+};
+
+async function updateStatus(){
+
+if(!account)return;
+
+const paid=await contract.methods.checkHasPaidAdvice(account).call();
+
+document.getElementById("adviceStatus").textContent=
+paid?"Paid":"Not Paid";
+
+document.getElementById("adviceStatus").className=
+paid?"status status-active":"status status-inactive";
+
+document.getElementById("getAdviceBtn").disabled=!paid;
+
+}
+
+async function getETHPrice(){
+
+try{
+
+const res=await fetch(
+"https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd"
+);
+
+const data=await res.json();
+
+document.getElementById("ethPrice").textContent=
+`ETH $${data.ethereum.usd.toLocaleString()}`;
+
+}catch(e){
+
+document.getElementById("ethPrice").textContent="Price unavailable";
+
+}
+
+}
+
+</script>
+
+</body>
+</html> {% endcomment %}
+
+
+{% comment %} ----------------------------------------------------------------------------------------------------------- {% endcomment %}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ETH AI Prediction</title>
+<script src="https://cdn.jsdelivr.net/npm/web3@1.10.4/dist/web3.min.js"></script>
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+
+body{
+background:#0a0c12;
+font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto;
+color:white;
+}
+
+/* TOP BAR */
+.topbar{
+display:flex;
+justify-content:space-between;
+padding:20px 40px;
+border-bottom:1px solid #1f2937;
+}
+
+.price{
+font-size:20px;
+}
+
+.wallet{
+font-family:monospace;
+font-size:12px;
+background:#111827;
+padding:6px 10px;
+border-radius:6px;
+}
+
+/* MAIN GRID */
+.main{
+display:grid;
+grid-template-columns:220px 1fr;
+height:calc(100vh - 70px);
+}
+
+/* LEFT PANEL */
+.left{
+padding:30px;
+border-right:1px solid #1f2937;
+display:flex;
+flex-direction:column;
+gap:15px;
+}
+
+/* CENTER */
+.center{
+position:relative;
+display:flex;
+align-items:center;
+justify-content:center;
+}
+
+/* AI BACKGROUND */
+.ai-core-bg{
+position:absolute;
+width:420px;
+height:420px;
+border-radius:50%;
+background:radial-gradient(circle,#2563eb33,transparent 70%);
+}
+
+/* OUTPUT */
+.output{
+z-index:1;
+text-align:center;
+max-width:800px;
+width:100%;
+}
+
+/* SIGNAL */
+#signal{
+font-size:52px;
+font-weight:700;
+letter-spacing:2px;
+margin-bottom:10px;
+}
+
+/* PRICE MOVE */
+.price-move{
+font-size:28px;
+color:#22c55e;
+margin-bottom:10px;
+}
+
+/* TIME */
+.time{
+font-size:14px;
+color:#9ca3af;
+margin-bottom:20px;
+}
+
+/* CHART */
+#chart img{
+max-width:100%;
+border-radius:10px;
+}
+
+/* BUTTONS */
+button{
+padding:12px;
+border:none;
+border-radius:8px;
+cursor:pointer;
+background:#1f2937;
+color:white;
+}
+
+button:hover{
+background:#2563eb;
+}
+
+button:disabled{
+opacity:0.4;
+}
+
+/* STATUS */
+.status{
+font-size:13px;
+color:#9ca3af;
+}
+
+/* LOADER */
+.loader{
+border:3px solid #222;
+border-top:3px solid #2563eb;
+border-radius:50%;
+width:28px;
+height:28px;
+animation:spin 1s linear infinite;
+margin:15px auto;
+display:none;
+}
+
+/* AI CORE CONTAINER */
+.ai-core{
+position:absolute;
+width:360px;
+height:360px;
+display:flex;
+align-items:center;
+justify-content:center;
+z-index:1;
+pointer-events:none;
+}
+
+/* OUTER ROTATING RING */
+.ai-ring{
+position:absolute;
+width:100%;
+height:100%;
+border-radius:50%;
+border:4px solid rgba(37,99,235,0.3);
+box-shadow:
+0 0 30px rgba(37,99,235,0.4),
+inset 0 0 30px rgba(37,99,235,0.3);
+
+animation:rotate 8s linear infinite;
+}
+
+/* SECOND INNER RING */
+.ai-ring::before{
+content:'Ethereum';
+position:absolute;
+top:20px;
+left:20px;
+right:20px;
+bottom:20px;
+border-radius:50%;
+border:2px dashed rgba(96,165,250,0.6);
+animation:rotateReverse 6s linear infinite;
+}
+
+/* CORE GLOW */
+.ai-ring::after{
+content:'';
+position:absolute;
+top:60px;
+left:60px;
+right:60px;
+bottom:60px;
+border-radius:50%;
+background:radial-gradient(circle,
+rgba(59,130,246,0.6),
+rgba(37,99,235,0.2),
+transparent 70%);
+filter:blur(20px);
+}
+
+/* AI TEXT CENTER */
+.ai-text{
+font-size:22px;
+letter-spacing:6px;
+font-weight:600;
+color:#93c5fd;
+text-shadow:
+0 0 10px rgba(96,165,250,0.8),
+0 0 20px rgba(37,99,235,0.6);
+z-index:2;
+}
+
+/* ANIMATIONS */
+@keyframes rotate{
+0%{transform:rotate(0deg);}
+100%{transform:rotate(360deg);}
+}
+
+@keyframes rotateReverse{
+0%{transform:rotate(360deg);}
+100%{transform:rotate(0deg);}
+}
+
+@keyframes spin{
+0%{transform:rotate(0)}
+100%{transform:rotate(360deg)}
+}
+</style>
+</head>
+
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+<div id="ethPrice" class="price">Loading...</div>
+<div id="walletAddress" class="wallet">Not connected</div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+<!-- LEFT CONTROLS -->
+<div class="left">
+
+<button id="connectBtn">Connect Wallet</button>
+
+<button id="payAdviceBtn" disabled>
+Unlock Prediction (0.01 ETH)
+</button>
+
+<button id="getAdviceBtn" disabled>
+Run AI Analysis
+</button>
+
+<div class="status">
+<span id="adviceStatus">Not Paid</span>
+</div>
+
+<div class="loader" id="loader"></div>
+
+</div>
+
+<!-- CENTER OUTPUT -->
+<div class="center">
+
+<div class="ai-core">
+    <div class="ai-ring"></div>
+    <div class="ai-text">AI</div>
+</div>
+
+<div class="output">
+
+<div class="output">
+
+<h1 id="signal"></h1>
+
+<div id="priceMove" class="price-move">
+{% comment %} -- → -- {% endcomment %}
+</div>
+
+<div id="time" class="time">
+{% comment %} Waiting for prediction {% endcomment %}
+</div>
+
+<div id="chart"></div>
+
+</div>
+
+</div>
+
+</div>
+
+<script>
+
+const CONTRACT_ADDRESS="0xe2AfAc562f58e44704Eff7A7A1BdB85A7A806859";
+
+const CONTRACT_ABI=[
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "_adviceFeeInWei",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "_rlAgentFeeInWei",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "nonpayable",
+		"type": "constructor"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "string",
+				"name": "advice",
+				"type": "string"
+			}
+		],
+		"name": "AdviceGiven",
+		"type": "event"
+	},
+	{
+		"inputs": [],
+		"name": "getAdvice",
+		"outputs": [
+			{
+				"internalType": "string",
+				"name": "",
+				"type": "string"
+			}
+		],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "payForAdvice",
+		"outputs": [],
+		"stateMutability": "payable",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "payForRLAgent",
+		"outputs": [],
+		"stateMutability": "payable",
+		"type": "function"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
+			{
+				"indexed": true,
+				"internalType": "string",
+				"name": "service",
+				"type": "string"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
+			}
+		],
+		"name": "PaymentReceived",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
+			{
+				"indexed": true,
+				"internalType": "string",
+				"name": "service",
+				"type": "string"
+			},
+			{
+				"indexed": false,
+				"internalType": "bool",
+				"name": "status",
+				"type": "bool"
+			}
+		],
+		"name": "PaymentStatus",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "expiry",
+				"type": "uint256"
+			}
+		],
+		"name": "RLAgentActivated",
+		"type": "event"
+	},
+	{
+		"inputs": [],
+		"name": "withdraw",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "owner",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
+			}
+		],
+		"name": "Withdraw",
+		"type": "event"
+	},
+	{
+		"inputs": [],
+		"name": "adviceFee",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "checkContractBalance",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "_user",
+				"type": "address"
+			}
+		],
+		"name": "checkHasPaidAdvice",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "_user",
+				"type": "address"
+			}
+		],
+		"name": "checkHasPaidRLAgent",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			}
+		],
+		"name": "checkRLAgentAccess",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			}
+		],
+		"name": "getRLAgentExpiry",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"name": "hasPaidAdvice",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"name": "hasPaidRLAgent",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "owner",
+		"outputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"name": "rlAgentExpiry",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "rlAgentFee",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	}
+];
+
+let web3,account,contract,currentWallet;
+
+/* CONNECT WALLET */
+document.getElementById("connectBtn").onclick=async()=>{
+if(!window.ethereum){
+alert("Install MetaMask");
+return;
+}
+
+const accounts=await window.ethereum.request({method:"eth_requestAccounts"});
+account=accounts[0];
+
+web3=new Web3(window.ethereum);
+contract=new web3.eth.Contract(CONTRACT_ABI,CONTRACT_ADDRESS);
+
+currentWallet=account;
+
+document.getElementById("walletAddress").innerHTML=
+account.slice(0,8)+"..."+account.slice(-6);
+
+document.getElementById("payAdviceBtn").disabled=false;
+
+updateStatus();
+getETHPrice();
+};
+
+/* PAY */
+document.getElementById("payAdviceBtn").onclick=async()=>{
+try{
+const fee=web3.utils.toWei("0.01","ether");
+
+await contract.methods.payForAdvice().send({
+from:account,
+value:fee
+});
+
+alert("Payment successful");
+updateStatus();
+
+}catch(err){
+alert("Payment failed "+err.message);
+}
+};
+
+/* GET PREDICTION */
+document.getElementById("getAdviceBtn").onclick=async()=>{
+
+document.getElementById("loader").style.display="block";
+
+document.getElementById("signal").innerText="...";
+document.getElementById("priceMove").innerText="Analyzing...";
+document.getElementById("time").innerText="";
+
+try{
+
+const res=await fetch(`/ml/get_advice/?address=${currentWallet}`);
+const data=await res.json();
+
+if(data.error){
+document.getElementById("signal").innerText="ERROR";
+document.getElementById("priceMove").innerText=data.error;
+return;
+}
+
+/* MAIN OUTPUT */
+document.getElementById("signal").innerText = data.advice;
+
+document.getElementById("priceMove").innerText =
+`$${data.current_price?.toFixed(2)} → $${data.predicted_price?.toFixed(2)}`;
+
+document.getElementById("time").innerText = data.predicted_time;
+
+document.getElementById("chart").innerHTML =
+data.plot_image
+? `<img src="data:image/png;base64,${data.plot_image}">`
+: "";
+
+}catch(e){
+document.getElementById("signal").innerText="ERROR";
+document.getElementById("priceMove").innerText=e.message;
+}
+
+document.getElementById("loader").style.display="none";
+
+};
+
+/* STATUS */
+async function updateStatus(){
+if(!account)return;
+
+const paid=await contract.methods.checkHasPaidAdvice(account).call();
+
+document.getElementById("adviceStatus").textContent=
+paid?"Paid":"Not Paid";
+
+document.getElementById("getAdviceBtn").disabled=!paid;
+}
+
+/* LIVE PRICE */
+async function getETHPrice(){
+try{
+const res=await fetch(
+"https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd"
+);
+
+const data=await res.json();
+
+document.getElementById("ethPrice").textContent=
+`ETH $${data.ethereum.usd.toLocaleString()}`;
+
+}catch{
+document.getElementById("ethPrice").textContent="Unavailable";
+}
+}
+
+const signalEl = document.getElementById("signal");
+
+{% comment %} if(signalEl){
+    signalEl.innerText = "";
+} {% endcomment %}
+
+</script>
+
+</body>
+</html>
