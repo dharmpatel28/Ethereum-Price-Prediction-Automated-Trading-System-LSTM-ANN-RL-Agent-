@@ -123,14 +123,10 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-COINBASE_API_KEY = "organizations/4159f670-dc06-4ebf-b486-16a3a4205c6f/apiKeys/1263e7ae-a0cb-4e56-b40c-9daf66ccd851"
+COINBASE_API_KEY = ""
 
 # Replace literal \n with actual newlines
-COINBASE_API_SECRET = """-----BEGIN EC PRIVATE KEY-----
-MHcCAQEEILmfN6aS6PS95aN8dXfm9bMarw75FQdBRo31yzqdhiZ0oAoGCCqGSM49
-AwEHoUQDQgAEwlpeAZYDFyRhvPT4upiNDZ20yfmRBhCtECpXILhV1/y5HHRy0Hhk
-B26rbYIEy8lSG7dbu3cXOXBjWCkipZ+fFg==
------END EC PRIVATE KEY-----
+COINBASE_API_SECRET = """
 """
 
 TIME_ZONE = 'America/Detroit'
